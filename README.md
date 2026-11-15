@@ -6,7 +6,8 @@ REST service for managing discount coupons.
 
 - **Java 17 or newer** – needed to start Gradle. Set `JAVA_HOME` to it.
   The project itself uses Java 25. If you don't have it, Gradle downloads it automatically during the first build.
-- **Docker** – must be running. Integration tests start a PostgreSQL database in Docker.
+- **Docker with Docker Compose** (for example Docker Desktop) – must be running. Integration tests start a PostgreSQL
+  database in Docker, and Docker Compose runs the whole application.
 
 The commands below use `./gradlew`. On Windows, use `gradlew.bat` instead.
 
@@ -56,3 +57,28 @@ Build the application without running tests:
 ```
 
 The application jar is created in `coupon-app/build/libs/coupon-app-0.0.1-SNAPSHOT.jar`.
+
+## Running the application with Docker
+
+Create the `.env` file with database passwords. The values from the example are fine for local use:
+
+```shell
+cp .env.example .env
+```
+
+Build and start the application and the PostgreSQL database:
+
+```shell
+docker compose up --build
+```
+
+The application connects to the database as the `empik` user, not as the default `postgres` superuser.
+
+Check that the application is running:
+
+```shell
+curl http://localhost:8080/actuator/health
+```
+
+To stop everything, press `Ctrl+C` or run `docker compose down`. The database data stays in a Docker volume.
+To delete the data as well, run `docker compose down -v`.

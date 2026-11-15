@@ -21,6 +21,9 @@ bin/
 # VS Code
 .vscode/
 
+# Local environment
+.env
+
 # OS
 .DS_Store
 Thumbs.db
