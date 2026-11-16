@@ -1,9 +1,13 @@
 package info.interview.couponservice.service.impl;
 
+import info.interview.couponservice.geolocation.GeolocationService;
+import info.interview.couponservice.geolocation.GeolocationUnavailableException;
 import info.interview.couponservice.persistence.CouponEntity;
 import info.interview.couponservice.persistence.CouponRepository;
 import info.interview.couponservice.persistence.CouponUsageEntity;
 import info.interview.couponservice.persistence.CouponUsageRepository;
+import info.interview.couponservice.service.CountryCheckUnavailableException;
+import info.interview.couponservice.service.CountryNotAllowedException;
 import info.interview.couponservice.service.Coupon;
 import info.interview.couponservice.service.CouponAlreadyExistsException;
 import info.interview.couponservice.service.CouponAlreadyUsedException;
@@ -16,6 +20,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.transaction.support.TransactionOperations;
 
 import java.time.Instant;
 import java.util.Optional;
@@ -34,12 +39,16 @@ class DefaultCouponServiceTest {
 
     private static final UUID COUPON_ID = UUID.randomUUID();
 
+    private static final String POLISH_IP = "83.31.0.1";
+
     private final CouponRepository couponRepository = mock(CouponRepository.class);
 
     private final CouponUsageRepository couponUsageRepository = mock(CouponUsageRepository.class);
 
-    private final DefaultCouponService couponService =
-            new DefaultCouponService(couponRepository, couponUsageRepository);
+    private final GeolocationService geolocationService = mock(GeolocationService.class);
+
+    private final DefaultCouponService couponService = new DefaultCouponService(
+            couponRepository, couponUsageRepository, geolocationService, TransactionOperations.withoutTransaction());
 
     @Test
     void createCouponSavesCodeAndCountryInUpperCase() {
@@ -82,11 +91,11 @@ class DefaultCouponServiceTest {
 
     @Test
     void registerUsageIncrementsCurrentUsesAndSavesUsage() {
-        CouponEntity coupon = existingCoupon(2);
-        when(couponRepository.findByCode("WIOSNA")).thenReturn(Optional.of(coupon));
+        CouponEntity coupon = existingPolishCoupon(2);
+        when(geolocationService.findCountry(POLISH_IP)).thenReturn(Optional.of("PL"));
         when(couponUsageRepository.save(any(CouponUsageEntity.class))).then(returnsFirstArg());
 
-        CouponUsage usage = couponService.registerUsage(new RegisterCouponUsageCommand("wiosna", "user-1"));
+        CouponUsage usage = couponService.registerUsage(new RegisterCouponUsageCommand("wiosna", "user-1", POLISH_IP));
 
         assertThat(coupon.getCurrentUses()).isEqualTo(1);
         ArgumentCaptor<CouponUsageEntity> savedUsage = ArgumentCaptor.forClass(CouponUsageEntity.class);
@@ -103,19 +112,60 @@ class DefaultCouponServiceTest {
     void registerUsageThrowsCouponNotFoundForUnknownCode() {
         when(couponRepository.findByCode("UNKNOWN")).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> couponService.registerUsage(new RegisterCouponUsageCommand("unknown", "user-1")))
+        assertThatThrownBy(() -> couponService.registerUsage(
+                new RegisterCouponUsageCommand("unknown", "user-1", POLISH_IP)))
                 .isInstanceOf(CouponNotFoundException.class)
                 .hasMessageContaining("UNKNOWN");
         verify(couponUsageRepository, never()).save(any());
     }
 
     @Test
+    void registerUsageThrowsCountryNotAllowedWhenRequestComesFromOtherCountry() {
+        CouponEntity coupon = existingPolishCoupon(2);
+        when(geolocationService.findCountry("85.214.0.1")).thenReturn(Optional.of("DE"));
+
+        assertThatThrownBy(() -> couponService.registerUsage(
+                new RegisterCouponUsageCommand("WIOSNA", "user-1", "85.214.0.1")))
+                .isInstanceOf(CountryNotAllowedException.class)
+                .hasMessageContaining("DE");
+        assertThat(coupon.getCurrentUses()).isZero();
+        verify(couponUsageRepository, never()).save(any());
+    }
+
+    @Test
+    void registerUsageThrowsCountryNotAllowedWhenCountryIsUnknown() {
+        CouponEntity coupon = existingPolishCoupon(2);
+        when(geolocationService.findCountry("127.0.0.1")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> couponService.registerUsage(
+                new RegisterCouponUsageCommand("WIOSNA", "user-1", "127.0.0.1")))
+                .isInstanceOf(CountryNotAllowedException.class)
+                .hasMessageContaining("unknown country");
+        assertThat(coupon.getCurrentUses()).isZero();
+        verify(couponUsageRepository, never()).save(any());
+    }
+
+    @Test
+    void registerUsageThrowsCountryCheckUnavailableWhenGeolocationFails() {
+        CouponEntity coupon = existingPolishCoupon(2);
+        when(geolocationService.findCountry(POLISH_IP)).thenThrow(new GeolocationUnavailableException());
+
+        assertThatThrownBy(() -> couponService.registerUsage(
+                new RegisterCouponUsageCommand("WIOSNA", "user-1", POLISH_IP)))
+                .isInstanceOf(CountryCheckUnavailableException.class)
+                .hasCauseInstanceOf(GeolocationUnavailableException.class);
+        assertThat(coupon.getCurrentUses()).isZero();
+        verify(couponUsageRepository, never()).save(any());
+    }
+
+    @Test
     void registerUsageThrowsCouponAlreadyUsedWhenUserUsedCouponBefore() {
-        CouponEntity coupon = existingCoupon(2);
-        when(couponRepository.findByCode("WIOSNA")).thenReturn(Optional.of(coupon));
+        CouponEntity coupon = existingPolishCoupon(2);
+        when(geolocationService.findCountry(POLISH_IP)).thenReturn(Optional.of("PL"));
         when(couponUsageRepository.existsByCouponIdAndUserId(COUPON_ID, "user-1")).thenReturn(true);
 
-        assertThatThrownBy(() -> couponService.registerUsage(new RegisterCouponUsageCommand("WIOSNA", "user-1")))
+        assertThatThrownBy(() -> couponService.registerUsage(
+                new RegisterCouponUsageCommand("WIOSNA", "user-1", POLISH_IP)))
                 .isInstanceOf(CouponAlreadyUsedException.class)
                 .hasMessageContaining("user-1");
         assertThat(coupon.getCurrentUses()).isZero();
@@ -124,20 +174,22 @@ class DefaultCouponServiceTest {
 
     @Test
     void registerUsageThrowsCouponExhaustedWhenLimitIsReached() {
-        CouponEntity coupon = existingCoupon(1);
+        CouponEntity coupon = existingPolishCoupon(1);
         coupon.incrementCurrentUses();
-        when(couponRepository.findByCode("WIOSNA")).thenReturn(Optional.of(coupon));
+        when(geolocationService.findCountry(POLISH_IP)).thenReturn(Optional.of("PL"));
 
-        assertThatThrownBy(() -> couponService.registerUsage(new RegisterCouponUsageCommand("WIOSNA", "user-2")))
+        assertThatThrownBy(() -> couponService.registerUsage(
+                new RegisterCouponUsageCommand("WIOSNA", "user-2", POLISH_IP)))
                 .isInstanceOf(CouponExhaustedException.class)
                 .hasMessageContaining("WIOSNA");
         assertThat(coupon.getCurrentUses()).isEqualTo(1);
         verify(couponUsageRepository, never()).save(any());
     }
 
-    private static CouponEntity existingCoupon(int maxUses) {
+    private CouponEntity existingPolishCoupon(int maxUses) {
         CouponEntity coupon = new CouponEntity("WIOSNA", "PL", maxUses, Instant.now());
         ReflectionTestUtils.setField(coupon, "id", COUPON_ID);
+        when(couponRepository.findByCode("WIOSNA")).thenReturn(Optional.of(coupon));
         return coupon;
     }
 }

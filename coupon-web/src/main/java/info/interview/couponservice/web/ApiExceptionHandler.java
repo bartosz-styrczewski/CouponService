@@ -1,5 +1,7 @@
 package info.interview.couponservice.web;
 
+import info.interview.couponservice.service.CountryCheckUnavailableException;
+import info.interview.couponservice.service.CountryNotAllowedException;
 import info.interview.couponservice.service.CouponAlreadyExistsException;
 import info.interview.couponservice.service.CouponAlreadyUsedException;
 import info.interview.couponservice.service.CouponExhaustedException;
@@ -45,6 +47,16 @@ class ApiExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler
     ProblemDetail handleCouponExhausted(CouponExhaustedException exception, HttpServletRequest request) {
         return rejectRequest(request, HttpStatus.CONFLICT, "COUPON_EXHAUSTED", exception.getMessage());
+    }
+
+    @ExceptionHandler
+    ProblemDetail handleCountryNotAllowed(CountryNotAllowedException exception, HttpServletRequest request) {
+        return rejectRequest(request, HttpStatus.FORBIDDEN, "COUNTRY_NOT_ALLOWED", exception.getMessage());
+    }
+
+    @ExceptionHandler
+    ProblemDetail handleCountryCheckUnavailable(CountryCheckUnavailableException exception, HttpServletRequest request) {
+        return rejectRequest(request, HttpStatus.SERVICE_UNAVAILABLE, "GEOLOCATION_UNAVAILABLE", exception.getMessage());
     }
 
     @ExceptionHandler

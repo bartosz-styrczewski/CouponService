@@ -1,6 +1,7 @@
 package info.interview.couponservice.web;
 
 import info.interview.couponservice.service.CouponService;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -28,7 +29,11 @@ class CouponController {
 
     @PostMapping("/{code}/usages")
     @ResponseStatus(HttpStatus.CREATED)
-    CouponUsageResponse registerUsage(@PathVariable String code, @Valid @RequestBody RegisterCouponUsageRequest request) {
-        return CouponUsageResponse.from(couponService.registerUsage(request.toCommand(code)));
+    CouponUsageResponse registerUsage(
+            @PathVariable String code,
+            @Valid @RequestBody RegisterCouponUsageRequest request,
+            HttpServletRequest servletRequest) {
+        return CouponUsageResponse.from(
+                couponService.registerUsage(request.toCommand(code, servletRequest.getRemoteAddr())));
     }
 }

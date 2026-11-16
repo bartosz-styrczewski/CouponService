@@ -74,16 +74,20 @@ Invoke-RestMethod -Method Post -Uri http://localhost:8080/api/coupons -ContentTy
 
 `POST /api/coupons/{code}/usages`
 
+A coupon can only be used from its country, which is found from the client IP address. Locally the application
+cannot see your public IP address, so the examples send a Polish IP address in the `X-Forwarded-For` header.
+
 Linux and macOS:
 
 ```shell
 curl -X POST http://localhost:8080/api/coupons/WIOSNA/usages \
   -H "Content-Type: application/json" \
+  -H "X-Forwarded-For: 83.31.0.1" \
   -d '{"userId": "user-1"}'
 ```
 
 Windows (PowerShell):
 
 ```powershell
-Invoke-RestMethod -Method Post -Uri http://localhost:8080/api/coupons/WIOSNA/usages -ContentType "application/json" -Body '{"userId": "user-1"}'
+Invoke-RestMethod -Method Post -Uri http://localhost:8080/api/coupons/WIOSNA/usages -ContentType "application/json" -Headers @{ "X-Forwarded-For" = "83.31.0.1" } -Body '{"userId": "user-1"}'
 ```

@@ -40,10 +40,11 @@ class RegisterCouponUsageRequestTest {
     }
 
     @Test
-    void toCommandCombinesCodeAndUserId() {
-        RegisterCouponUsageCommand command = new RegisterCouponUsageRequest("user-1").toCommand("WIOSNA");
+    void toCommandCombinesCodeUserIdAndIpAddress() {
+        RegisterCouponUsageCommand command =
+                new RegisterCouponUsageRequest("user-1").toCommand("WIOSNA", "83.31.0.1");
 
-        assertThat(command).isEqualTo(new RegisterCouponUsageCommand("WIOSNA", "user-1"));
+        assertThat(command).isEqualTo(new RegisterCouponUsageCommand("WIOSNA", "user-1", "83.31.0.1"));
     }
 
     private Set<String> violatedFields(RegisterCouponUsageRequest request) {

@@ -1,11 +1,14 @@
 package info.interview.couponservice;
 
+import com.github.tomakehurst.wiremock.WireMockServer;
+import com.github.tomakehurst.wiremock.client.ResponseDefinitionBuilder;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureRestTestClient;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.SpringBootTest.WebEnvironment;
+import org.springframework.cache.CacheManager;
 import org.springframework.context.annotation.Import;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpStatus;
@@ -14,13 +17,23 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.web.servlet.client.RestTestClient;
 
 import java.util.List;
+import java.util.Objects;
 
+import static com.github.tomakehurst.wiremock.client.WireMock.get;
+import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
+import static com.github.tomakehurst.wiremock.client.WireMock.okJson;
+import static com.github.tomakehurst.wiremock.client.WireMock.serverError;
+import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest(webEnvironment = WebEnvironment.RANDOM_PORT)
 @AutoConfigureRestTestClient
-@Import(TestcontainersConfiguration.class)
+@Import({TestcontainersConfiguration.class, GeolocationStubConfiguration.class})
 class CouponUsageApiIT {
+
+    private static final String POLISH_IP = "83.31.0.1";
+
+    private static final String GERMAN_IP = "85.214.0.1";
 
     @Autowired
     private RestTestClient restTestClient;
@@ -28,17 +41,28 @@ class CouponUsageApiIT {
     @Autowired
     private JdbcClient jdbcClient;
 
+    @Autowired
+    private WireMockServer geolocationStub;
+
+    @Autowired
+    private CacheManager cacheManager;
+
     @BeforeEach
-    void deleteCoupons() {
+    void resetState() {
         jdbcClient.sql("DELETE FROM coupon_usage").update();
         jdbcClient.sql("DELETE FROM coupon").update();
+        Objects.requireNonNull(cacheManager.getCache("countries")).clear();
+        geolocationStub.resetAll();
+        stubCountryIs(POLISH_IP, okJson("""
+                {"ip": "83.31.0.1", "country": "PL"}
+                """));
     }
 
     @Test
     void registersUsageAndIncrementsCurrentUses() {
         createCoupon("SUMMER", 2);
 
-        registerUsage("summer", "user-1")
+        registerUsage("summer", "user-1", POLISH_IP)
                 .expectStatus().isCreated()
                 .expectBody()
                 .jsonPath("$.code").isEqualTo("SUMMER")
@@ -52,9 +76,9 @@ class CouponUsageApiIT {
     @Test
     void rejectsSecondUsageBySameUser() {
         createCoupon("SUMMER", 5);
-        registerUsage("SUMMER", "user-1").expectStatus().isCreated();
+        registerUsage("SUMMER", "user-1", POLISH_IP).expectStatus().isCreated();
 
-        registerUsage("SUMMER", "user-1")
+        registerUsage("SUMMER", "user-1", POLISH_IP)
                 .expectStatus().isEqualTo(HttpStatus.CONFLICT)
                 .expectBody()
                 .jsonPath("$.errorCode").isEqualTo("COUPON_ALREADY_USED");
@@ -66,9 +90,9 @@ class CouponUsageApiIT {
     @Test
     void rejectsUsageWhenCouponIsExhausted() {
         createCoupon("SUMMER", 1);
-        registerUsage("SUMMER", "user-1").expectStatus().isCreated();
+        registerUsage("SUMMER", "user-1", POLISH_IP).expectStatus().isCreated();
 
-        registerUsage("SUMMER", "user-2")
+        registerUsage("SUMMER", "user-2", POLISH_IP)
                 .expectStatus().isEqualTo(HttpStatus.CONFLICT)
                 .expectBody()
                 .jsonPath("$.errorCode").isEqualTo("COUPON_EXHAUSTED");
@@ -79,7 +103,7 @@ class CouponUsageApiIT {
 
     @Test
     void rejectsUsageOfUnknownCoupon() {
-        registerUsage("UNKNOWN", "user-1")
+        registerUsage("UNKNOWN", "user-1", POLISH_IP)
                 .expectStatus().isNotFound()
                 .expectBody()
                 .jsonPath("$.errorCode").isEqualTo("COUPON_NOT_FOUND");
@@ -91,7 +115,7 @@ class CouponUsageApiIT {
     void rejectsUsageWithoutUserIdAndSavesNothing() {
         createCoupon("SUMMER", 5);
 
-        registerUsage("SUMMER", "")
+        registerUsage("SUMMER", "", POLISH_IP)
                 .expectStatus().isBadRequest()
                 .expectBody()
                 .jsonPath("$.errorCode").isEqualTo("VALIDATION_FAILED")
@@ -100,6 +124,70 @@ class CouponUsageApiIT {
 
         assertThat(currentUses("SUMMER")).isZero();
         assertThat(savedUsages()).isEmpty();
+    }
+
+    @Test
+    void rejectsUsageFromOtherCountryAndSavesNothing() {
+        createCoupon("SUMMER", 5);
+        stubCountryIs(GERMAN_IP, okJson("""
+                {"ip": "85.214.0.1", "country": "DE"}
+                """));
+
+        registerUsage("SUMMER", "user-1", GERMAN_IP)
+                .expectStatus().isForbidden()
+                .expectBody()
+                .jsonPath("$.errorCode").isEqualTo("COUNTRY_NOT_ALLOWED");
+
+        assertThat(currentUses("SUMMER")).isZero();
+        assertThat(savedUsages()).isEmpty();
+    }
+
+    @Test
+    void usesNextProviderWhenFirstOneFails() {
+        createCoupon("SUMMER", 5);
+        stubCountryIs(POLISH_IP, serverError());
+        stubGeoJs(POLISH_IP, okJson("""
+                {"country": "PL", "ip": "83.31.0.1", "name": "Poland"}
+                """));
+
+        registerUsage("SUMMER", "user-1", POLISH_IP).expectStatus().isCreated();
+
+        geolocationStub.verify(3, getRequestedFor(urlEqualTo("/country-is/" + POLISH_IP)));
+        geolocationStub.verify(1, getRequestedFor(urlEqualTo("/geojs/v1/ip/country/" + POLISH_IP + ".json")));
+        assertThat(savedUsages()).containsExactly(new UsageRow("SUMMER", "user-1"));
+    }
+
+    @Test
+    void rejectsUsageWhenGeolocationIsUnavailableAndSavesNothing() {
+        createCoupon("SUMMER", 5);
+        stubCountryIs(POLISH_IP, serverError());
+        stubGeoJs(POLISH_IP, serverError());
+
+        registerUsage("SUMMER", "user-1", POLISH_IP)
+                .expectStatus().isEqualTo(HttpStatus.SERVICE_UNAVAILABLE)
+                .expectBody()
+                .jsonPath("$.errorCode").isEqualTo("GEOLOCATION_UNAVAILABLE");
+
+        assertThat(currentUses("SUMMER")).isZero();
+        assertThat(savedUsages()).isEmpty();
+    }
+
+    @Test
+    void asksGeolocationProviderOnlyOnceForSameIpAddress() {
+        createCoupon("SUMMER", 5);
+
+        registerUsage("SUMMER", "user-1", POLISH_IP).expectStatus().isCreated();
+        registerUsage("SUMMER", "user-2", POLISH_IP).expectStatus().isCreated();
+
+        geolocationStub.verify(1, getRequestedFor(urlEqualTo("/country-is/" + POLISH_IP)));
+    }
+
+    private void stubCountryIs(String ipAddress, ResponseDefinitionBuilder response) {
+        geolocationStub.stubFor(get(urlEqualTo("/country-is/" + ipAddress)).willReturn(response));
+    }
+
+    private void stubGeoJs(String ipAddress, ResponseDefinitionBuilder response) {
+        geolocationStub.stubFor(get(urlEqualTo("/geojs/v1/ip/country/" + ipAddress + ".json")).willReturn(response));
     }
 
     private void createCoupon(String code, int maxUses) {
@@ -112,8 +200,9 @@ class CouponUsageApiIT {
                 .expectStatus().isCreated();
     }
 
-    private RestTestClient.ResponseSpec registerUsage(String code, String userId) {
+    private RestTestClient.ResponseSpec registerUsage(String code, String userId, String clientIp) {
         return restTestClient.post().uri("/api/coupons/{code}/usages", code)
+                .header("X-Forwarded-For", clientIp)
                 .contentType(MediaType.APPLICATION_JSON)
                 .body("""
                         {"userId": "%s"}

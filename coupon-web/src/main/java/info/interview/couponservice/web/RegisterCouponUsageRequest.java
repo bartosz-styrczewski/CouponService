@@ -6,7 +6,7 @@ import jakarta.validation.constraints.Size;
 
 record RegisterCouponUsageRequest(@NotBlank @Size(max = 64) String userId) {
 
-    RegisterCouponUsageCommand toCommand(String code) {
-        return new RegisterCouponUsageCommand(code, userId);
+    RegisterCouponUsageCommand toCommand(String code, String ipAddress) {
+        return new RegisterCouponUsageCommand(code, userId, ipAddress);
     }
 }

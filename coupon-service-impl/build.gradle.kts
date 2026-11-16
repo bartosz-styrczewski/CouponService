@@ -5,4 +5,5 @@ plugins {
 dependencies {
     implementation(project(":coupon-service-api"))
     implementation(project(":coupon-persistence"))
+    implementation(project(":coupon-geolocation-api"))
 }

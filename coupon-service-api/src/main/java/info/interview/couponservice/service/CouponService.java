@@ -15,10 +15,13 @@ public interface CouponService {
 
     /**
      * Registers that a user has used a coupon. The coupon code is case-insensitive.
+     * The coupon can only be used from its country, which is determined from the IP address of the request.
      *
-     * @throws CouponNotFoundException    if there is no coupon with the given code
-     * @throws CouponAlreadyUsedException if the user has already used this coupon
-     * @throws CouponExhaustedException   if the coupon has reached its maximum number of uses
+     * @throws CouponNotFoundException          if there is no coupon with the given code
+     * @throws CountryNotAllowedException       if the request comes from another or an unknown country
+     * @throws CountryCheckUnavailableException if the country of the request cannot be checked
+     * @throws CouponAlreadyUsedException       if the user has already used this coupon
+     * @throws CouponExhaustedException         if the coupon has reached its maximum number of uses
      */
     CouponUsage registerUsage(RegisterCouponUsageCommand command);
 }

@@ -3,3 +3,27 @@
 spring:
   application:
     name: coupon-service
+  jpa:
+    open-in-view: false
+  cache:
+    cache-names: countries
+    caffeine:
+      spec: maximumSize=10000,expireAfterWrite=24h
+
+server:
+  forward-headers-strategy: native
+
+coupon:
+  geolocation:
+    # Providers in priority order: the next one is asked only when the previous ones fail.
+    providers: country-is, geojs
+    connect-timeout: 1s
+    read-timeout: 2s
+    retry:
+      max-retries: 2
+      delay: 200ms
+    provider:
+      country-is:
+        url: https://api.country.is
+      geojs:
+        url: https://get.geojs.io

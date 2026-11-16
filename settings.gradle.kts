@@ -20,4 +20,6 @@ include(
     "coupon-service-api",
     "coupon-service-impl",
     "coupon-persistence",
+    "coupon-geolocation-api",
+    "coupon-geolocation-impl",
 )
