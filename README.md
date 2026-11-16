@@ -17,6 +17,8 @@ On Windows, use `gradlew.bat` instead of `./gradlew`.
   separate API and implementation modules. Gradle enforces the layers at compile time, for example `coupon-web` can
   use only `coupon-service-api`. `coupon-app` puts all modules together.
 - **Concurrency and scaling** – the application keeps no state except the cache, so it can run as many instances.
+  Docker Compose starts two instances and an nginx load balancer in front of them, which listens on port 8080 and
+  sends requests to the instances in turn. To start three instances, use `docker compose up --scale app=3`.
   The database guards the data:
   - the number of uses is increased by a single database update that works only while the coupon still has uses
     left. The database locks the coupon during this update, so parallel requests wait for each other and two of
@@ -49,7 +51,7 @@ On Windows, use `gradlew.bat` instead of `./gradlew`.
   "Country unknown" is an answer, not a failure.
 - **Cache** – countries are kept in memory in [Caffeine](https://github.com/ben-manes/caffeine) (up to 10,000 IP
   addresses for 24 hours). With `@Cacheable(sync = true)` parallel requests from the same IP ask the providers only
-  once. Failures are not cached.
+  once per instance. Failures are not cached.
 - **Circuit breaker (possible next step)** – a provider that stopped responding is still asked with all retries,
   so with the current settings a request can wait over 20 seconds. A circuit breaker (for example
   [Resilience4j](https://resilience4j.readme.io)) would skip such a provider for a while.
