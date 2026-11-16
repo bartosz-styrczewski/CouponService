@@ -2,6 +2,7 @@ import org.springframework.boot.gradle.plugin.SpringBootPlugin
 
 plugins {
     `java-library`
+    jacoco
     id("io.spring.dependency-management")
 }
 
@@ -37,7 +38,7 @@ testing {
     }
 }
 
-tasks.named("check") {
+tasks.named("test") {
     dependsOn(testing.suites.named("integrationTest"))
 }
 
