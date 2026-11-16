@@ -70,6 +70,8 @@ On Windows, use `gradlew.bat` instead of `./gradlew`.
 
 The test report is created in `coupon-app/build/reports/tests/test/aggregated-results/index.html`.
 
+The same command runs on GitHub Actions for every push and pull request to `main`.
+
 ## Code coverage
 
 ```shell
