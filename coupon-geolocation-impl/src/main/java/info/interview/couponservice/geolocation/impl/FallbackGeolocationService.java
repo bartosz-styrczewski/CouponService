@@ -39,7 +39,7 @@ class FallbackGeolocationService implements GeolocationService {
     }
 
     @Override
-    @Cacheable(cacheNames = "countries", unless = "#result == null")
+    @Cacheable(cacheNames = "countries", sync = true)
     public Optional<String> findCountry(String ipAddress) {
         if (!isPublic(ipAddress)) {
             return Optional.empty();

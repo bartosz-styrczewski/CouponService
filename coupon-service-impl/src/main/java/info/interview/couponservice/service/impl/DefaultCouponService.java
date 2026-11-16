@@ -72,10 +72,10 @@ class DefaultCouponService implements CouponService {
 
     @Override
     public CouponUsage registerUsage(RegisterCouponUsageCommand command) {
-        String code = CouponCodes.normalize(command.code());
+        CouponEntity coupon = findCoupon(CouponCodes.normalize(command.code()));
         // The country is checked outside the transaction, so waiting for geolocation does not hold a database connection.
-        checkCountry(findCoupon(code), command.ipAddress());
-        return transactionOperations.execute(status -> saveUsage(code, command.userId()));
+        checkCountry(coupon, command.ipAddress());
+        return transactionOperations.execute(status -> saveUsage(coupon, command.userId()));
     }
 
     private void checkCountry(CouponEntity coupon, String ipAddress) {
@@ -90,18 +90,19 @@ class DefaultCouponService implements CouponService {
         }
     }
 
-    private CouponUsage saveUsage(String code, String userId) {
-        CouponEntity coupon = findCoupon(code);
-        if (couponUsageRepository.existsByCouponIdAndUserId(coupon.getId(), userId)) {
-            throw new CouponAlreadyUsedException(code, userId);
+    private CouponUsage saveUsage(CouponEntity coupon, String userId) {
+        CouponUsageEntity usage;
+        try {
+            usage = couponUsageRepository.saveAndFlush(new CouponUsageEntity(coupon.getId(), userId, now()));
+        } catch (DataIntegrityViolationException exception) {
+            // The unique constraint on coupon and user is the only one that can fail for a usage of an existing coupon.
+            throw new CouponAlreadyUsedException(coupon.getCode(), userId, exception);
         }
-        if (coupon.getCurrentUses() >= coupon.getMaxUses()) {
-            throw new CouponExhaustedException(code);
+        if (couponRepository.incrementCurrentUsesIfAvailable(coupon.getId()) == 0) {
+            throw new CouponExhaustedException(coupon.getCode());
         }
-        coupon.incrementCurrentUses();
-        CouponUsageEntity usage = couponUsageRepository.save(new CouponUsageEntity(coupon.getId(), userId, now()));
-        log.info("User {} used coupon {}", userId, code);
-        return new CouponUsage(code, usage.getUserId(), usage.getUsedAt());
+        log.info("User {} used coupon {}", userId, coupon.getCode());
+        return new CouponUsage(coupon.getCode(), usage.getUserId(), usage.getUsedAt());
     }
 
     private CouponEntity findCoupon(String code) {

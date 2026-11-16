@@ -3,3 +3,5 @@ databaseChangeLog:
       file: db/changelog/001-create-coupon-table.sql
   - include:
       file: db/changelog/002-create-coupon-usage-table.sql
+  - include:
+      file: db/changelog/003-add-coupon-uses-checks.sql
