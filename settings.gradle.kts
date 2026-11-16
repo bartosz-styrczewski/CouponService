@@ -14,4 +14,10 @@ dependencyResolutionManagement {
 
 rootProject.name = "coupon-service"
 
-include("coupon-app")
+include(
+    "coupon-app",
+    "coupon-web",
+    "coupon-service-api",
+    "coupon-service-impl",
+    "coupon-persistence",
+)

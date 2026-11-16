@@ -37,9 +37,9 @@ Gradle skips tests if nothing has changed since the last run. To run them again 
 ./gradlew integrationTest --rerun
 ```
 
-Test reports:
+Each module has its own test reports, for example:
 
-- unit tests: `coupon-app/build/reports/tests/test/index.html`
+- unit tests: `coupon-web/build/reports/tests/test/index.html`
 - integration tests: `coupon-app/build/reports/tests/integrationTest/index.html`
 
 ## Building the application
@@ -82,3 +82,29 @@ curl http://localhost:8080/actuator/health
 
 To stop everything, press `Ctrl+C` or run `docker compose down`. The database data stays in a Docker volume.
 To delete the data as well, run `docker compose down -v`.
+
+## API
+
+### Create a coupon
+
+```shell
+curl -i -X POST http://localhost:8080/api/coupons \
+  -H "Content-Type: application/json" \
+  -d '{"code": "WIOSNA", "maxUses": 100, "country": "PL"}'
+```
+
+- `code` – letters, digits, `-` and `_`, up to 32 characters. Letter case does not matter: `wiosna` and `WIOSNA`
+  are the same coupon. The code is saved in upper case.
+- `maxUses` – how many times the coupon can be used, at least 1.
+- `country` – two-letter ISO 3166-1 country code, for example `PL`.
+
+The response is `201 Created` with the coupon in the body.
+
+### Errors
+
+Errors are returned in the Problem Details format (RFC 9457) with an extra `errorCode` field:
+
+| Situation                            | HTTP status | `errorCode`             |
+|--------------------------------------|-------------|-------------------------|
+| Invalid request data                 | 400         | `VALIDATION_FAILED`     |
+| Coupon with this code already exists | 409         | `COUPON_ALREADY_EXISTS` |

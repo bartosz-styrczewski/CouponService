@@ -3,5 +3,3 @@
 spring:
   application:
     name: coupon-service
-  jpa:
-    open-in-view: false

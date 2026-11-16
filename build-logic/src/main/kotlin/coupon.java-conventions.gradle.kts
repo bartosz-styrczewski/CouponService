@@ -1,7 +1,7 @@
 import org.springframework.boot.gradle.plugin.SpringBootPlugin
 
 plugins {
-    java
+    `java-library`
     id("io.spring.dependency-management")
 }
 
@@ -18,6 +18,10 @@ dependencyManagement {
     imports {
         mavenBom(SpringBootPlugin.BOM_COORDINATES)
     }
+}
+
+tasks.withType<JavaCompile>().configureEach {
+    options.compilerArgs.add("-parameters")
 }
 
 testing {
