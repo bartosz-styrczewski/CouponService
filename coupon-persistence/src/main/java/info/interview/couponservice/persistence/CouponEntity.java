@@ -37,6 +37,14 @@ public class CouponEntity {
         this.createdAt = createdAt;
     }
 
+    public void incrementCurrentUses() {
+        currentUses++;
+    }
+
+    public UUID getId() {
+        return id;
+    }
+
     public String getCode() {
         return code;
     }

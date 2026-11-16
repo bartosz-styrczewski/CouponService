@@ -2,26 +2,44 @@ package info.interview.couponservice.service.impl;
 
 import info.interview.couponservice.persistence.CouponEntity;
 import info.interview.couponservice.persistence.CouponRepository;
+import info.interview.couponservice.persistence.CouponUsageEntity;
+import info.interview.couponservice.persistence.CouponUsageRepository;
 import info.interview.couponservice.service.Coupon;
 import info.interview.couponservice.service.CouponAlreadyExistsException;
+import info.interview.couponservice.service.CouponAlreadyUsedException;
+import info.interview.couponservice.service.CouponExhaustedException;
+import info.interview.couponservice.service.CouponNotFoundException;
+import info.interview.couponservice.service.CouponUsage;
 import info.interview.couponservice.service.CreateCouponCommand;
+import info.interview.couponservice.service.RegisterCouponUsageCommand;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.test.util.ReflectionTestUtils;
+
+import java.time.Instant;
+import java.util.Optional;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.AdditionalAnswers.returnsFirstArg;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class DefaultCouponServiceTest {
 
+    private static final UUID COUPON_ID = UUID.randomUUID();
+
     private final CouponRepository couponRepository = mock(CouponRepository.class);
 
-    private final DefaultCouponService couponService = new DefaultCouponService(couponRepository);
+    private final CouponUsageRepository couponUsageRepository = mock(CouponUsageRepository.class);
+
+    private final DefaultCouponService couponService =
+            new DefaultCouponService(couponRepository, couponUsageRepository);
 
     @Test
     void createCouponSavesCodeAndCountryInUpperCase() {
@@ -58,6 +76,68 @@ class DefaultCouponServiceTest {
 
         assertThatThrownBy(() -> couponService.createCoupon(new CreateCouponCommand("wiosna", 100, "pl")))
                 .isInstanceOf(CouponAlreadyExistsException.class)
+                .hasMessageContaining("WIOSNA")
+                .hasCauseInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
+    void registerUsageIncrementsCurrentUsesAndSavesUsage() {
+        CouponEntity coupon = existingCoupon(2);
+        when(couponRepository.findByCode("WIOSNA")).thenReturn(Optional.of(coupon));
+        when(couponUsageRepository.save(any(CouponUsageEntity.class))).then(returnsFirstArg());
+
+        CouponUsage usage = couponService.registerUsage(new RegisterCouponUsageCommand("wiosna", "user-1"));
+
+        assertThat(coupon.getCurrentUses()).isEqualTo(1);
+        ArgumentCaptor<CouponUsageEntity> savedUsage = ArgumentCaptor.forClass(CouponUsageEntity.class);
+        verify(couponUsageRepository).save(savedUsage.capture());
+        assertThat(savedUsage.getValue().getCouponId()).isEqualTo(COUPON_ID);
+        assertThat(savedUsage.getValue().getUserId()).isEqualTo("user-1");
+        assertThat(savedUsage.getValue().getUsedAt()).isNotNull();
+        assertThat(usage.code()).isEqualTo("WIOSNA");
+        assertThat(usage.userId()).isEqualTo("user-1");
+        assertThat(usage.usedAt()).isNotNull();
+    }
+
+    @Test
+    void registerUsageThrowsCouponNotFoundForUnknownCode() {
+        when(couponRepository.findByCode("UNKNOWN")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> couponService.registerUsage(new RegisterCouponUsageCommand("unknown", "user-1")))
+                .isInstanceOf(CouponNotFoundException.class)
+                .hasMessageContaining("UNKNOWN");
+        verify(couponUsageRepository, never()).save(any());
+    }
+
+    @Test
+    void registerUsageThrowsCouponAlreadyUsedWhenUserUsedCouponBefore() {
+        CouponEntity coupon = existingCoupon(2);
+        when(couponRepository.findByCode("WIOSNA")).thenReturn(Optional.of(coupon));
+        when(couponUsageRepository.existsByCouponIdAndUserId(COUPON_ID, "user-1")).thenReturn(true);
+
+        assertThatThrownBy(() -> couponService.registerUsage(new RegisterCouponUsageCommand("WIOSNA", "user-1")))
+                .isInstanceOf(CouponAlreadyUsedException.class)
+                .hasMessageContaining("user-1");
+        assertThat(coupon.getCurrentUses()).isZero();
+        verify(couponUsageRepository, never()).save(any());
+    }
+
+    @Test
+    void registerUsageThrowsCouponExhaustedWhenLimitIsReached() {
+        CouponEntity coupon = existingCoupon(1);
+        coupon.incrementCurrentUses();
+        when(couponRepository.findByCode("WIOSNA")).thenReturn(Optional.of(coupon));
+
+        assertThatThrownBy(() -> couponService.registerUsage(new RegisterCouponUsageCommand("WIOSNA", "user-2")))
+                .isInstanceOf(CouponExhaustedException.class)
                 .hasMessageContaining("WIOSNA");
+        assertThat(coupon.getCurrentUses()).isEqualTo(1);
+        verify(couponUsageRepository, never()).save(any());
+    }
+
+    private static CouponEntity existingCoupon(int maxUses) {
+        CouponEntity coupon = new CouponEntity("WIOSNA", "PL", maxUses, Instant.now());
+        ReflectionTestUtils.setField(coupon, "id", COUPON_ID);
+        return coupon;
     }
 }

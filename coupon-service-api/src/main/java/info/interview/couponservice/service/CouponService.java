@@ -12,4 +12,13 @@ public interface CouponService {
      * @throws CouponAlreadyExistsException if a coupon with the same code already exists
      */
     Coupon createCoupon(CreateCouponCommand command);
+
+    /**
+     * Registers that a user has used a coupon. The coupon code is case-insensitive.
+     *
+     * @throws CouponNotFoundException    if there is no coupon with the given code
+     * @throws CouponAlreadyUsedException if the user has already used this coupon
+     * @throws CouponExhaustedException   if the coupon has reached its maximum number of uses
+     */
+    CouponUsage registerUsage(RegisterCouponUsageCommand command);
 }

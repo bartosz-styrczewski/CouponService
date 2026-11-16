@@ -31,6 +31,7 @@ class CouponApiIT {
 
     @BeforeEach
     void deleteCoupons() {
+        jdbcClient.sql("DELETE FROM coupon_usage").update();
         jdbcClient.sql("DELETE FROM coupon").update();
     }
 

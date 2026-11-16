@@ -69,3 +69,21 @@ Windows (PowerShell):
 ```powershell
 Invoke-RestMethod -Method Post -Uri http://localhost:8080/api/coupons -ContentType "application/json" -Body '{"code": "WIOSNA", "maxUses": 100, "country": "PL"}'
 ```
+
+### Use a coupon
+
+`POST /api/coupons/{code}/usages`
+
+Linux and macOS:
+
+```shell
+curl -X POST http://localhost:8080/api/coupons/WIOSNA/usages \
+  -H "Content-Type: application/json" \
+  -d '{"userId": "user-1"}'
+```
+
+Windows (PowerShell):
+
+```powershell
+Invoke-RestMethod -Method Post -Uri http://localhost:8080/api/coupons/WIOSNA/usages -ContentType "application/json" -Body '{"userId": "user-1"}'
+```
